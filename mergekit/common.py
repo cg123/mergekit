@@ -16,15 +16,18 @@
 import logging
 import os
 import os.path
-from typing import List, Optional, Union
+from typing import Generic, Iterator, List, Optional, Tuple, Union
 
 import huggingface_hub
+import immutables
 import numpy as np
 import peft
+import pydantic
 import torch
 import transformers
-from pydantic import BaseModel
+from pydantic import BaseModel, SerializerFunctionWrapHandler
 from transformers import AutoConfig, PretrainedConfig
+from typing_extensions import TypeVar
 
 from mergekit.io import ShardedTensorIndex
 
@@ -177,3 +180,35 @@ def parse_kmb(value: Union[str, int]) -> int:
         return int(value[:-1]) * 1000 * 1000 * 1000
     else:
         raise ValueError(value)
+
+
+T_K = TypeVar("T_K")
+T_V = TypeVar("T_V")
+
+
+class ImmutableMap(
+    Generic[T_K, T_V], BaseModel, frozen=True, arbitrary_types_allowed=True
+):
+    data: immutables.Map[T_K, T_V]
+
+    @pydantic.field_validator("data", mode="before")
+    def validate_data(cls, data):
+        return immutables.Map(data)
+
+    @pydantic.field_serializer("data", mode="wrap")
+    def serialize_data(
+        self,
+        data: immutables.Map[T_K, T_V],
+        nxt: SerializerFunctionWrapHandler,
+        # info: SerializationInfo,
+    ):
+        return nxt(dict(data.items()))
+
+    def __iter__(self):
+        return self.data.__iter__()
+
+    def __getitem__(self, key: T_K) -> T_V:
+        return self.data[key]
+
+    def items(self) -> Iterator[Tuple[T_K, T_V]]:
+        return self.data.items()

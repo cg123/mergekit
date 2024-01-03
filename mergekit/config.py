@@ -53,7 +53,7 @@ def evaluate_setting(
                 if (
                     (cond.filter is None)
                     or (cond.filter == "*")
-                    or cond.filter in tensor_name
+                    or (tensor_name and cond.filter in tensor_name)
                 ):
                     res = evaluate_setting(tensor_name, cond.value, t)
                     return res
@@ -113,10 +113,9 @@ class MergeConfiguration(BaseModel):
 
 class ConfigReader(BaseModel):
     config: MergeConfiguration
-    tensor_name: str
     t: float
-    slice_out: Optional[OutputSliceDefinition]
-    slices_in: Optional[List[InputSliceDefinition]]
+    tensor_name: Optional[str] = None
+    slice_out: Optional[OutputSliceDefinition] = None
 
     @property
     def base_model(self) -> Optional[ModelReference]:
@@ -129,6 +128,30 @@ class ConfigReader(BaseModel):
             return ModelReference.parse(res)
         return None
 
+    def for_out_slice(self, slice: OutputSliceDefinition) -> "ConfigReader":
+        return ConfigReader(
+            config=self.config,
+            t=self.t,
+            tensor_name=self.tensor_name,
+            slice_out=slice,
+        )
+
+    def for_tensor(self, tensor_name: str) -> "ConfigReader":
+        return ConfigReader(
+            config=self.config,
+            t=self.t,
+            tensor_name=tensor_name,
+            slice_out=self.slice_out,
+        )
+
+    def with_t(self, t: float) -> "ConfigReader":
+        return ConfigReader(
+            config=self.config,
+            t=t,
+            tensor_name=self.tensor_name,
+            slice_out=self.slice_out,
+        )
+
     def parameter(
         self,
         name: str,
@@ -136,16 +159,16 @@ class ConfigReader(BaseModel):
         default: Any = None,
         required: bool = False,
     ) -> Any:
-        if model and self.slices_in:
-            for s in self.slices_in:
-                if s.model == str(model) and s.parameters and name in s.parameters:
-                    value = evaluate_setting(
-                        self.tensor_name, s.parameters[name], self.t
-                    )
-                    if value is not None:
-                        return value
-
         if self.slice_out:
+            if model:
+                for s in self.slice_out.sources:
+                    if s.model == str(model) and s.parameters and name in s.parameters:
+                        value = evaluate_setting(
+                            self.tensor_name, s.parameters[name], self.t
+                        )
+                        if value is not None:
+                            return value
+
             if self.slice_out.parameters and name in self.slice_out.parameters:
                 value = evaluate_setting(
                     self.tensor_name, self.slice_out.parameters[name], self.t
@@ -177,10 +200,8 @@ class ConfigReader(BaseModel):
                 return value
 
         if required:
-            suffix = (
-                f" for {str(model)}.{self.tensor_name}"
-                if model
-                else f" for {self.tensor_name}"
-            )
+            path_paths = [str(s) for s in [model, self.tensor_name] if s]
+            p = ".".join(path_paths)
+            suffix = f" for {p}" if p else ""
             raise RuntimeError(f"Missing required parameter {name}{suffix}")
         return default

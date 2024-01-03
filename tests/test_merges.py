@@ -11,7 +11,8 @@ from mergekit.config import (
     MergeConfiguration,
     OutputSliceDefinition,
 )
-from mergekit.merge import MergeOptions, run_merge
+from mergekit.merge import run_merge
+from mergekit.options import MergeOptions
 
 
 def make_picollama(path: str):
