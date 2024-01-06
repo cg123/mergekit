@@ -36,6 +36,7 @@ class ModelReference(BaseModel, frozen=True):
 
     path: str
     lora_path: Optional[str] = None
+    revision: str = "main"
 
     def merged(
         self, cache_dir: Optional[str] = None, trust_remote_code: bool = False
@@ -60,6 +61,7 @@ class ModelReference(BaseModel, frozen=True):
                 torch_dtype=torch.float16,
                 low_cpu_mem_usage=True,
                 trust_remote_code=trust_remote_code,
+                revision=self.revision,
             )
             model = peft.PeftModel.from_pretrained(
                 model, self.lora_path, is_trainable=False
@@ -92,20 +94,20 @@ class ModelReference(BaseModel, frozen=True):
                 patterns.append("*.bin")
 
             path = huggingface_hub.snapshot_download(
-                path, cache_dir=cache_dir, allow_patterns=patterns
+                path, cache_dir=cache_dir, allow_patterns=patterns, revision=self.revision
             )
 
         return ShardedTensorIndex.from_disk(path)
 
     @classmethod
-    def parse(cls, value: str) -> "ModelReference":
+    def parse(cls, value: str, revision: Optional[str] = "main") -> "ModelReference":
         """Parse a ModelReference. Format: '<MODEL_PATH>(+<LORA_PATH>)?'"""
 
         chunks = value.split("+")
         if len(chunks) == 1:
-            return ModelReference(path=value)
+            return ModelReference(path=value, revision=revision)
         elif len(chunks) == 2:
-            return ModelReference(path=chunks[0], lora_path=chunks[1])
+            return ModelReference(path=chunks[0], lora_path=chunks[1], revision=revision)
         raise ValueError(f"Can't parse {value}")
 
     def __str__(self) -> str:
